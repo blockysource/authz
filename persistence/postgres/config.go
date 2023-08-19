@@ -1,11 +1,11 @@
-package postgres
+package postgresdriver
 
 import (
 	"context"
 	"database/sql"
 	"time"
 
-	"github.com/blockysource/authz/persistence/admin/v1/types"
+	"github.com/blockysource/authz/persistence/types"
 	"github.com/blockysource/blockysql"
 	"github.com/blockysource/go-pkg/times"
 )
@@ -18,7 +18,7 @@ type ConfigStorage struct {
 }
 
 // UpsertServiceConfig is a method to upsert the service configuration.
-func (s *ConfigStorage) UpsertServiceConfig(ctx context.Context, tx *sql.Tx, in admintypesv1.UpsertServiceConfig) (admintypesv1.ServiceConfig, error) {
+func (s *ConfigStorage) UpsertServiceConfig(ctx context.Context, tx *sql.Tx, in typesdb.UpsertServiceConfig) (typesdb.ServiceConfig, error) {
 	var defaultKeyID sql.NullInt32
 
 	// If the default key identifier is not empty, get the key identifier of the default key.
@@ -29,7 +29,7 @@ func (s *ConfigStorage) UpsertServiceConfig(ctx context.Context, tx *sql.Tx, in 
 
 		err := row.Scan(&defaultKeyID)
 		if err != nil {
-			return admintypesv1.ServiceConfig{}, err
+			return typesdb.ServiceConfig{}, err
 		}
 	}
 
@@ -45,10 +45,10 @@ func (s *ConfigStorage) UpsertServiceConfig(ctx context.Context, tx *sql.Tx, in 
 		in.KeyRotationPeriod, // key_rotation_period
 	)
 	if err != nil {
-		return admintypesv1.ServiceConfig{}, err
+		return typesdb.ServiceConfig{}, err
 	}
 
-	return admintypesv1.ServiceConfig{
+	return typesdb.ServiceConfig{
 		LastUpdatedAt:     now,
 		Issuer:            in.Issuer,
 		DefaultKeyID:      in.DefaultKeyID,
@@ -57,7 +57,7 @@ func (s *ConfigStorage) UpsertServiceConfig(ctx context.Context, tx *sql.Tx, in 
 }
 
 // GetServiceConfig is a method to get the service configuration.
-func (s *ConfigStorage) GetServiceConfig(ctx context.Context, tx *sql.Tx) (admintypesv1.ServiceConfig, error) {
+func (s *ConfigStorage) GetServiceConfig(ctx context.Context, tx *sql.Tx) (typesdb.ServiceConfig, error) {
 	const selectServiceConfigQuery = `SELECT 
     sc.created_at AS created_at, 
     sc.issuer AS issuer, 
@@ -79,10 +79,10 @@ LIMIT 1`
 
 	err := row.Scan(&createdAt, &issuer, &defaultKeyID, &keyRotationPeriod)
 	if err != nil {
-		return admintypesv1.ServiceConfig{}, err
+		return typesdb.ServiceConfig{}, err
 	}
 
-	return admintypesv1.ServiceConfig{
+	return typesdb.ServiceConfig{
 		LastUpdatedAt:     createdAt,
 		Issuer:            issuer,
 		DefaultKeyID:      defaultKeyID.String,

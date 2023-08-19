@@ -1,4 +1,4 @@
-package admintypesv1
+package typesdb
 
 import (
 	"time"

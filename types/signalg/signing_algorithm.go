@@ -1,4 +1,4 @@
-package dbtypes
+package signalg
 
 //go:generate go run github.com/dmarkham/enumer -type=SigningAlgorithm -text -sql -trimprefix=SigningAlgorithm -output=signing_algorithm_string.go
 

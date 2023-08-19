@@ -25,7 +25,7 @@ CREATE TABLE "blocky_authz_key"
     active          BOOLEAN                  NOT NULL DEFAULT false,
 
     -- last_rotated_at is the time that the key was last rotated.
-    last_rotated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    last_rotated_at TIMESTAMP WITH TIME ZONE          DEFAULT NOW(),
 
 
     -- is the number of seconds that key versions are valid for.
@@ -40,17 +40,18 @@ CREATE TABLE "blocky_authz_key"
     priority        INT                      NOT NULL DEFAULT 0,
 
     -- versions is the number of versions belonging to the key.
-    versions        INT                      NOT NULL DEFAULT 0,
+    versions        INT                      NOT NULL DEFAULT 0
 );
 
---
+-- blocky_authz_key_algorithm is a table that contains the algorithms supported by the key.
+-- it is a one to many relationship with the key table (1 key can have multiple algorithms).
 CREATE TABLE "blocky_authz_key_algorithm"
 (
     -- id is the primary key of the table.
     id                SERIAL PRIMARY KEY,
 
     -- key_id is the id of the key that the algorithm belongs to.
-    key_id            INT
+    key_id            INT                            NOT NULL
         REFERENCES blocky_authz_key (id)
             ON DELETE CASCADE,
 
@@ -60,6 +61,9 @@ CREATE TABLE "blocky_authz_key_algorithm"
 
     CONSTRAINT key_algorithm_unique UNIQUE (key_id, signing_algorithm)
 );
+
+-- blocky_authz_key_algorithm_key_id_idx is an index on the key_id column of the blocky_authz_key_algorithm table.
+CREATE INDEX blocky_authz_key_algorithm_key_id_idx ON blocky_authz_key_algorithm (key_id);
 
 
 -- blocky_authz_service_config is a table that contains configurations used by the service.

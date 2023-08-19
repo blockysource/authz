@@ -1,15 +1,15 @@
-package postgres
+package postgresdriver
 
 import (
 	"bytes"
 	"fmt"
 	"strings"
 
-	"github.com/blockysource/authz/persistence/dbtypes"
+	"github.com/blockysource/authz/types/signalg"
 )
 
 // AlgorithmsArray is a list of signing algorithms stored as an array in postgres.
-type AlgorithmsArray []dbtypes.SigningAlgorithm
+type AlgorithmsArray []signalg.SigningAlgorithm
 
 // Scan implements the sql.Scanner interface.
 func (a *AlgorithmsArray) Scan(src interface{}) error {
@@ -24,7 +24,7 @@ func (a *AlgorithmsArray) Scan(src interface{}) error {
 	return nil
 }
 
-func (a *AlgorithmsArray) scanBytes(v []byte) error {
+func (a *AlgorithmsArray) scanBytes(src []byte) error {
 	elems, err := scanLinearArray(src, []byte{','}, "AlgorithmsArray")
 	if err != nil {
 		return err
@@ -33,9 +33,9 @@ func (a *AlgorithmsArray) scanBytes(v []byte) error {
 	if *a != nil && len(elems) == 0 {
 		*a = (*a)[:0]
 	} else {
-		b := make([]dbtypes.SigningAlgorithm, len(elems))
+		b := make([]signalg.SigningAlgorithm, len(elems))
 		for i, elem := range elems {
-			var sa dbtypes.SigningAlgorithm
+			var sa signalg.SigningAlgorithm
 			if err := sa.Scan(elem) ; err != nil {
 				return err
 			}

@@ -1,9 +1,11 @@
-package v1alphahandler
+package adminhandlerv1alpha
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/pallinder/go-randomdata"
@@ -11,18 +13,20 @@ import (
 	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/blockysource/authz/internal/errdet"
-	"github.com/blockysource/authz/persistence/dbtypes"
+	admindriver2 "github.com/blockysource/authz/persistence/driver"
+	"github.com/blockysource/authz/persistence/types"
+	"github.com/blockysource/go-genproto/blocky/api"
+
+	"github.com/blockysource/authz/types/signalg"
 	"github.com/blockysource/blockysql"
 	"github.com/blockysource/blockysql/bserr"
 	authzadminv1alpha "github.com/blockysource/go-genproto/blocky/authz/admin/v1alpha"
 	"github.com/blockysource/go-genproto/blocky/authz/type/signalgpb"
-
-	admindriverv1 "github.com/blockysource/authz/persistence/admin/v1/driver"
-	admintypesv1 "github.com/blockysource/authz/persistence/admin/v1/types"
 )
 
 var _ authzadminv1alpha.KeysAdminServiceServer = (*KeysHandler)(nil)
@@ -32,8 +36,8 @@ type KeysHandler struct {
 	authzadminv1alpha.UnimplementedKeysAdminServiceServer `wire:"-"`
 
 	db *blockysql.DB
-	ks admindriverv1.KeysStorage
-	cs admindriverv1.ConfigStorage
+	ks admindriver2.KeysStorage
+	cs admindriver2.ConfigStorage
 }
 
 // ListKeys is a method to list all keys.
@@ -42,6 +46,10 @@ func (h *KeysHandler) ListKeys(ctx context.Context, req *authzadminv1alpha.ListK
 	if req == nil {
 		return nil, status.Error(codes.Internal, "nil request provided")
 	}
+
+	proto.GetExtension(authzadminv1alpha.File_blocky_authz_admin_v1alpha_admin_keys_proto.Services().ByName("KeysAdmin").Methods().
+		ByName("ListKeys").Options(), api.E_QueryParams).(*api.QueryParameters)
+
 
 	// By default, return 50 keys.
 	if req.PageSize < 0 {
@@ -61,12 +69,12 @@ func (h *KeysHandler) ListKeys(ctx context.Context, req *authzadminv1alpha.ListK
 		})
 	}
 
-	lk := admintypesv1.ListKeysQuery{
+	lk := typesdb.ListKeysQuery{
 		Offset:   token.Offset,
 		PageSize: req.PageSize,
 	}
 
-	var result admintypesv1.ListKeysResult
+	var result typesdb.ListKeysResult
 	err = h.db.RunInTransaction(ctx, nil, func(ctx context.Context, tx *sql.Tx) error {
 		var err error
 		result.Keys, err = h.ks.ListKeys(ctx, tx, lk)
@@ -74,7 +82,7 @@ func (h *KeysHandler) ListKeys(ctx context.Context, req *authzadminv1alpha.ListK
 			return err
 		}
 
-		result.TotalSize, err = h.ks.CountKeys(ctx, tx, lk)
+		result.TotalSize, err = h.ks.CountKeys(ctx, tx)
 		if err != nil {
 			return err
 		}
@@ -93,6 +101,7 @@ func (h *KeysHandler) ListKeys(ctx context.Context, req *authzadminv1alpha.ListK
 	out := make([]*authzadminv1alpha.Key, 0, len(result.Keys))
 	for _, key := range result.Keys {
 		rk := authzadminv1alpha.Key{
+			Name:           fmt.Sprintf("keys/%s", key.KeyID),
 			KeyId:          key.KeyID,
 			DisplayName:    key.DisplayName,
 			CreateTime:     timestamppb.New(key.CreatedAt),
@@ -133,6 +142,9 @@ func (h *KeysHandler) ListKeys(ctx context.Context, req *authzadminv1alpha.ListK
 	}, nil
 }
 
+// keyRegexp is a regular expression to validate the key identifier format. ([a-z][0-9]-/.)
+var keyRegexp = regexp.MustCompile(`^[a-z0-9-]+$`)
+
 // CreateKey is an implementation of the CreateKey RPC.
 // It will create a new key with the provided parameters.
 // If the key identifier is not provided or is empty, it will be auto-generated.
@@ -145,11 +157,22 @@ func (h *KeysHandler) CreateKey(ctx context.Context, req *authzadminv1alpha.Crea
 		})
 	}
 
+	// Verify the key identifier is valid, if undefined the key identifier will be auto-generated from the storage layer.
+	if req.KeyId != "" {
+		if !keyRegexp.MatchString(req.KeyId) {
+			return nil, errdet.BadRequest("invalid input arguments", &errdetails.BadRequest_FieldViolation{
+				Field:       "key_id",
+				Description: "key identifier must be in the format of [a-z0-9-]+",
+			})
+		}
+	}
+
 	// Check if the key identifier is provided.
-	ckQuery := admintypesv1.CreateKey{
+	ckQuery := typesdb.CreateKey{
 		KeyID:       req.KeyId,
 		DisplayName: req.Key.DisplayName,
 		Priority:    req.Key.Priority,
+		Active:      req.Key.Active,
 	}
 
 	// Verify signing algorithms, which cannot be empty, cannot contain duplicates and cannot contain unsupported algorithms.
@@ -179,15 +202,14 @@ func (h *KeysHandler) CreateKey(ctx context.Context, req *authzadminv1alpha.Crea
 		dups[alg] = struct{}{}
 	}
 
-	ckQuery.SigningAlgorithms = make([]dbtypes.SigningAlgorithm, len(req.Key.Algorithms))
+	ckQuery.SigningAlgorithms = make([]signalg.SigningAlgorithm, len(req.Key.Algorithms))
 	for i, alg := range req.Key.Algorithms {
-		ckQuery.SigningAlgorithms[i] = dbtypes.SigningAlgorithm(alg)
+		ckQuery.SigningAlgorithms[i] = signalg.SigningAlgorithm(alg)
 	}
 
 	// Check if the key name is provided.
 	if ckQuery.DisplayName == "" {
 		var sb strings.Builder
-		sb.WriteString("key-")
 		sb.WriteString(randomdata.SillyName())
 		for i, alg := range ckQuery.SigningAlgorithms {
 			if i < len(ckQuery.SigningAlgorithms) {
@@ -202,14 +224,28 @@ func (h *KeysHandler) CreateKey(ctx context.Context, req *authzadminv1alpha.Crea
 		ckQuery.RotationPeriod = req.Key.RotationPeriod.AsDuration()
 	}
 
-	var dbKey admintypesv1.Key
+	var dbKey typesdb.Key
 	err := h.db.RunInTransaction(ctx, nil, func(ctx context.Context, tx *sql.Tx) error {
+		// If the rotation period is not provided, use the default value from the service configuration.
 		if req.Key.RotationPeriod == nil {
 			cfg, err := h.cs.GetServiceConfig(ctx, tx)
 			if err != nil {
 				return err
 			}
 			ckQuery.RotationPeriod = cfg.KeyRotationPeriod
+		}
+
+		// If the key identifier is not provided, get the next key identifier.
+		if ckQuery.KeyID == "" {
+			// Get the next key identifier.
+			keyID, err := h.ks.GetNextKeyTableID(ctx, tx)
+			if err != nil {
+				return err
+			}
+
+			// Convert the key identifier to the key table identifier.
+			ckQuery.TableID = keyID
+			ckQuery.KeyID = strconv.FormatInt(int64(keyID), 10)
 		}
 
 		var err error
@@ -257,7 +293,7 @@ func (h *KeysHandler) CreateKey(ctx context.Context, req *authzadminv1alpha.Crea
 	// But we're returning the key version as 1, assuming that the key version is eventually created successfully.
 	versionsNo := int32(1)
 	out := &authzadminv1alpha.Key{
-		Name: fmt.Sprintf("key/%s", dbKey.KeyID),
+		Name:        fmt.Sprintf("key/%s", dbKey.KeyID),
 		KeyId:       dbKey.KeyID,
 		Algorithms:  req.Key.Algorithms,
 		DisplayName: dbKey.DisplayName,
@@ -270,7 +306,6 @@ func (h *KeysHandler) CreateKey(ctx context.Context, req *authzadminv1alpha.Crea
 }
 
 func (h *KeysHandler) ActivateKey(ctx context.Context, req *authzadminv1alpha.ActivateKeyRequest) (*authzadminv1alpha.ActivateKeyResponse, error) {
-	// TODO implement me
 	panic("implement me")
 }
 
@@ -280,11 +315,6 @@ func (h *KeysHandler) RevokeKeyVersion(ctx context.Context, req *authzadminv1alp
 }
 
 func (h *KeysHandler) ListKeyVersions(ctx context.Context, req *authzadminv1alpha.ListKeyVersionsRequest) (*authzadminv1alpha.ListKeyVersionsResponse, error) {
-	// TODO implement me
-	panic("implement me")
-}
-
-func (h *KeysHandler) mustEmbedUnimplementedKeysAdminServiceServer() {
 	// TODO implement me
 	panic("implement me")
 }
