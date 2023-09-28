@@ -1,3 +1,6 @@
+// Copyright (c) The Blocky Source,
+// SPDX-License-Identifier: BUSL-1.1
+
 package config
 
 import (
@@ -24,7 +27,7 @@ type ServiceConfig struct {
 	Issuer            string
 
 	// DefaultKeyID is the default key id of the service.
-	// This is an identifier of the key, not its version.
+	// This is an identifier of the key, not its revision.
 	DefaultKeyID      string
 
 	// FavoredAlgorithms is the favored algorithms of the service.
