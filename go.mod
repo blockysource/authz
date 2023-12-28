@@ -1,6 +1,9 @@
+// Copyright (c) The Blocky Source,
+// SPDX-License-Identifier: BUSL-1.1
+
 module github.com/blockysource/authz
 
-go 1.20
+go 1.21
 
 require (
 	github.com/blockysource/blockysql v0.0.0-20230808081852-288a6aac22d5

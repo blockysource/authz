@@ -7,7 +7,7 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/blockysource/authz/persistence/driver/algorithm"
+	"github.com/blockysource/authz/persistence/driver/algorithmdb"
 )
 
 // KeysStorage is a storage for keys used for local 'authz' service purpose.
@@ -32,7 +32,7 @@ type Key struct {
 	Priority int
 
 	// Algorithm is the key algorithm.
-	Algorithm algorithm.SigningAlgorithm
+	Algorithm algorithmdb.SigningAlgorithm
 
 	// EncSecret is the key secret.
 	EncSecret []byte

@@ -10,19 +10,18 @@ import (
 
 	uuid "github.com/blockysource/authz/persistence/driver/uuid"
 
-	"github.com/blockysource/authz/persistence/driver/algorithm"
+	"github.com/blockysource/authz/persistence/driver/algorithmdb"
 )
 
 // InstanceStorage is a database storage for the instance and its configuration.
 type InstanceStorage interface {
 	// CreateInstance creates a new instance.
+	// This should not be done in general manually by the admin user, but rather m2m on event of project creation.
+	// But a manual creation should be possible, in case when the instance is not created (error).
 	CreateInstance(ctx context.Context, tx *sql.Tx, instance Instance) error
 
 	// GetInstance gets an instance by its identifier.
 	GetInstance(ctx context.Context, tx *sql.Tx, query GetInstanceQuery) (Instance, error)
-
-	// InsertAccessTokenConfig inserts a new instance access token config.
-	InsertAccessTokenConfig(ctx context.Context, tx *sql.Tx, config InstanceAccessTokenConfig) error
 
 	// GetAccessTokenConfig gets an instance access token config by its identifier.
 	GetAccessTokenConfig(ctx context.Context, tx *sql.Tx, query GetInstanceQuery) (InstanceAccessTokenConfig, error)
@@ -48,9 +47,6 @@ type GetInstanceQuery struct {
 
 // Instance represents an authorization service instance.
 type Instance struct {
-	// ID is the unique identifier of the instance.
-	ID uuid.UUID
-
 	// ProjectID is the project identifier of the instance.
 	ProjectID string
 
@@ -66,17 +62,14 @@ type Instance struct {
 
 // InstanceAccessTokenConfig represents the configuration of an instance access token.
 type InstanceAccessTokenConfig struct {
-	// InstanceID is the unique identifier of the instance.
-	InstanceID uuid.UUID
-
 	// ProjectID is the project identifier of the instance.
 	ProjectID string
 
 	// FavoredSigningAlgorithm is the favored signing algorithm of the instance.
-	FavoredSigningAlgorithm algorithm.SigningAlgorithm
+	FavoredSigningAlgorithm algorithmdb.SigningAlgorithm
 
-	// TokenExpiration is the expiration of the instance access token.
-	TokenExpiration time.Duration
+	// TokenLifetime is the expiration of the instance access token.
+	TokenLifetime time.Duration
 }
 
 // InstanceRefreshTokenConfig represents the configuration of an instance refresh token.
@@ -91,7 +84,7 @@ type InstanceRefreshTokenConfig struct {
 	TokenExpiration time.Duration
 
 	// FavoredSigningAlgorithm is the favored signing algorithm of the instance.
-	FavoredSigningAlgorithm algorithm.SigningAlgorithm
+	FavoredSigningAlgorithm algorithmdb.SigningAlgorithm
 
 	// TokenSize is the size of the instance refresh token.
 	TokenSize int
